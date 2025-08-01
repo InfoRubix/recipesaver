@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Recipe Generator</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- jsPDF for PDF Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -37,13 +39,6 @@
             <p class="text-gray-400 mt-2">Enter your ingredients and let AI create a recipe for you!</p>
         </div>
 
-        <!-- Google Apps Script URL Input -->
-        <div class="space-y-2">
-            <label for="apps-script-url" class="text-sm font-medium text-gray-300">Google Apps Script URL</label>
-            <input type="url" id="apps-script-url" placeholder="Paste your deployed Google Apps Script URL here" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-            <p class="text-xs text-gray-500">This is required to save recipes to your Google Sheet.</p>
-        </div>
-
         <!-- Ingredient Input Form -->
         <div class="space-y-4">
             <div class="space-y-2">
@@ -71,9 +66,15 @@
                 <h3 class="text-lg font-semibold text-blue-300 mb-2">Instructions:</h3>
                 <ol id="recipe-instructions" class="list-decimal list-inside space-y-2 text-gray-300"></ol>
             </div>
-            <button id="save-btn" class="w-full mt-4 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-800">
-                Save to Google Sheet
-            </button>
+            <!-- Action Buttons -->
+            <div class="flex flex-col sm:flex-row gap-3 mt-4">
+                <button id="save-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-800">
+                    Save to Google Sheet
+                </button>
+                <button id="pdf-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-red-800">
+                    Download as PDF
+                </button>
+            </div>
         </div>
         
         <!-- Message Box -->
@@ -82,6 +83,10 @@
     </div>
 
     <script>
+        // --- CONFIGURATION ---
+        // The Google Apps Script URL is now hardcoded here.
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz3K4dxNnr8qSkMpyA9poylGkRjZwtyxIoObdN0y41ZBIO_a0Y5nFDLSMZ1bDMXC_cv_Q/exec';
+
         // DOM Element References
         const generateBtn = document.getElementById('generate-btn');
         const ingredientsInput = document.getElementById('ingredients');
@@ -91,7 +96,7 @@
         const recipeIngredientsEl = document.getElementById('recipe-ingredients');
         const recipeInstructionsEl = document.getElementById('recipe-instructions');
         const saveBtn = document.getElementById('save-btn');
-        const appsScriptUrlInput = document.getElementById('apps-script-url');
+        const pdfBtn = document.getElementById('pdf-btn');
         const messageBox = document.getElementById('message-box');
 
         // To store the current recipe data
@@ -123,14 +128,8 @@
                         type: "OBJECT",
                         properties: {
                             "recipeName": { "type": "STRING" },
-                            "ingredients": {
-                                "type": "ARRAY",
-                                "items": { "type": "STRING" }
-                            },
-                            "instructions": {
-                                "type": "ARRAY",
-                                "items": { "type": "STRING" }
-                            }
+                            "ingredients": { "type": "ARRAY", "items": { "type": "STRING" } },
+                            "instructions": { "type": "ARRAY", "items": { "type": "STRING" } }
                         },
                         required: ["recipeName", "ingredients", "instructions"]
                     }
@@ -176,19 +175,15 @@
         // --- Display the generated recipe in the UI ---
         const displayRecipe = (recipe) => {
             recipeNameEl.textContent = recipe.recipeName;
-            
-            // Clear previous lists
             recipeIngredientsEl.innerHTML = '';
             recipeInstructionsEl.innerHTML = '';
 
-            // Populate ingredients list
             recipe.ingredients.forEach(item => {
                 const li = document.createElement('li');
                 li.textContent = item;
                 recipeIngredientsEl.appendChild(li);
             });
 
-            // Populate instructions list
             recipe.instructions.forEach(step => {
                 const li = document.createElement('li');
                 li.textContent = step;
@@ -200,11 +195,6 @@
 
         // --- Save Recipe to Google Sheet via Apps Script ---
         const saveToSheet = async () => {
-            const appsScriptUrl = appsScriptUrlInput.value.trim();
-            if (!appsScriptUrl) {
-                showMessage('Please provide the Google Apps Script URL to save.', 'error');
-                return;
-            }
             if (!currentRecipe) {
                 showMessage('No recipe to save. Please generate one first.', 'error');
                 return;
@@ -215,13 +205,10 @@
             showMessage('Saving recipe to your Google Sheet...', 'info');
 
             try {
-                // The Apps Script expects a POST request with a JSON payload
-                const response = await fetch(appsScriptUrl, {
+                const response = await fetch(APPS_SCRIPT_URL, {
                     method: 'POST',
-                    mode: 'cors', // Required for cross-origin requests to Apps Script
-                    headers: {
-                        'Content-Type': 'text/plain;charset=utf-8', // Apps Script quirk
-                    },
+                    mode: 'cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify(currentRecipe)
                 });
                 
@@ -242,6 +229,67 @@
             }
         };
 
+        // --- Generate and Download PDF ---
+        const generatePdf = () => {
+            if (!currentRecipe) {
+                showMessage('No recipe to download. Please generate one first.', 'error');
+                return;
+            }
+
+            const { recipeName, ingredients, instructions } = currentRecipe;
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            let yPos = 20;
+            const pageMargin = 14;
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const textWidth = pageWidth - (pageMargin * 2);
+
+            // Add Title
+            doc.setFontSize(22);
+            doc.text(recipeName, pageWidth / 2, yPos, { align: 'center' });
+            yPos += 20;
+
+            // Add Ingredients
+            doc.setFontSize(16);
+            doc.text("Ingredients:", pageMargin, yPos);
+            yPos += 10;
+            doc.setFontSize(12);
+            ingredients.forEach(item => {
+                const lines = doc.splitTextToSize(`• ${item}`, textWidth);
+                if (yPos + (lines.length * 7) > 280) {
+                    doc.addPage();
+                    yPos = 20;
+                }
+                doc.text(lines, pageMargin, yPos);
+                yPos += (lines.length * 7);
+            });
+
+            // Add Instructions
+            yPos += 10;
+            if (yPos > 280) {
+                doc.addPage();
+                yPos = 20;
+            }
+            doc.setFontSize(16);
+            doc.text("Instructions:", pageMargin, yPos);
+            yPos += 10;
+            doc.setFontSize(12);
+            instructions.forEach((step, index) => {
+                const lines = doc.splitTextToSize(`${index + 1}. ${step}`, textWidth);
+                 if (yPos + (lines.length * 7) > 280) {
+                    doc.addPage();
+                    yPos = 20;
+                }
+                doc.text(lines, pageMargin, yPos);
+                yPos += (lines.length * 7);
+            });
+
+            // Save the PDF with a clean filename
+            const filename = `${recipeName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
+            doc.save(filename);
+        };
+
         // --- Utility to show messages to the user ---
         const showMessage = (message, type) => {
             messageBox.textContent = message;
@@ -252,12 +300,15 @@
                 messageBox.classList.add('bg-red-900', 'text-red-300');
             } else if (type === 'info') {
                  messageBox.classList.add('bg-blue-900', 'text-blue-300');
+            } else {
+                 messageBox.textContent = ''; // Clear message
             }
         };
 
         // Event Listeners
         generateBtn.addEventListener('click', generateRecipe);
         saveBtn.addEventListener('click', saveToSheet);
+        pdfBtn.addEventListener('click', generatePdf);
     </script>
 </body>
 </html>
