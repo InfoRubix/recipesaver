@@ -43,7 +43,7 @@
         <div class="space-y-4">
             <div class="space-y-2">
                 <label for="ingredients" class="text-sm font-medium text-gray-300">Your Ingredients</label>
-                <textarea id="ingredients" rows="4" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="e.g., chicken breast, rice, broccoli, soy sauce"></textarea>
+                <textarea id="ingredients" rows="4" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="e.g., chicken, ginger, onion, rice"></textarea>
             </div>
             <button id="generate-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-800">
                 Generate Recipe
@@ -80,202 +80,206 @@
     </div>
 
     <script>
-        // --- CONFIGURATION ---
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz3K4dxNnr8qSkMpyA9poylGkRjZwtyxIoObdN0y41ZBIO_a0Y5nFDLSMZ1bDMXC_cv_Q/exec';
-
-        // DOM Element References
-        const generateBtn = document.getElementById('generate-btn');
-        const ingredientsInput = document.getElementById('ingredients');
-        const loader = document.getElementById('loader');
-        const recipeOutput = document.getElementById('recipe-output');
-        const recipeNameEl = document.getElementById('recipe-name');
-        const recipeIngredientsEl = document.getElementById('recipe-ingredients');
-        const recipeInstructionsEl = document.getElementById('recipe-instructions');
-        const saveAndDownloadBtn = document.getElementById('save-and-download-btn');
-        const messageBox = document.getElementById('message-box');
-
-        // To store the current recipe data
-        let currentRecipe = null;
-
-        // --- Gemini API Call to Generate Recipe ---
-        const generateRecipe = async () => {
-            const ingredients = ingredientsInput.value.trim();
-            if (!ingredients) {
-                showMessage('Please enter some ingredients.', 'error');
-                return;
-            }
-
-            loader.classList.remove('hidden');
-            recipeOutput.classList.add('hidden');
-            generateBtn.disabled = true;
-            generateBtn.textContent = 'Generating...';
-            showMessage('', 'clear');
-
-            const prompt = `Based on the following ingredients, create a simple recipe. Provide a creative name for the recipe. The ingredients are: ${ingredients}. Please format the output as a single JSON object with the keys "recipeName" (a string), "ingredients" (an array of strings), and "instructions" (an array of strings).`;
+        // --- Wait for the DOM to be fully loaded before running the script ---
+        document.addEventListener('DOMContentLoaded', () => {
             
-            const payload = {
-                contents: [{ role: "user", parts: [{ text: prompt }] }],
-                generationConfig: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "OBJECT",
-                        properties: {
-                            "recipeName": { "type": "STRING" },
-                            "ingredients": { "type": "ARRAY", "items": { "type": "STRING" } },
-                            "instructions": { "type": "ARRAY", "items": { "type": "STRING" } }
-                        },
-                        required: ["recipeName", "ingredients", "instructions"]
+            // --- CONFIGURATION ---
+            const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz3K4dxNnr8qSkMpyA9poylGkRjZwtyxIoObdN0y41ZBIO_a0Y5nFDLSMZ1bDMXC_cv_Q/exec';
+
+            // DOM Element References
+            const generateBtn = document.getElementById('generate-btn');
+            const ingredientsInput = document.getElementById('ingredients');
+            const loader = document.getElementById('loader');
+            const recipeOutput = document.getElementById('recipe-output');
+            const recipeNameEl = document.getElementById('recipe-name');
+            const recipeIngredientsEl = document.getElementById('recipe-ingredients');
+            const recipeInstructionsEl = document.getElementById('recipe-instructions');
+            const saveAndDownloadBtn = document.getElementById('save-and-download-btn');
+            const messageBox = document.getElementById('message-box');
+
+            // To store the current recipe data
+            let currentRecipe = null;
+
+            // --- Gemini API Call to Generate Recipe ---
+            const generateRecipe = async () => {
+                const ingredients = ingredientsInput.value.trim();
+                if (!ingredients) {
+                    showMessage('Please enter some ingredients.', 'error');
+                    return;
+                }
+
+                loader.classList.remove('hidden');
+                recipeOutput.classList.add('hidden');
+                generateBtn.disabled = true;
+                generateBtn.textContent = 'Generating...';
+                showMessage('', 'clear');
+
+                const prompt = `Based on the following ingredients, create a simple recipe. Provide a creative name for the recipe. The ingredients are: ${ingredients}. Please format the output as a single JSON object with the keys "recipeName" (a string), "ingredients" (an array of strings), and "instructions" (an array of strings).`;
+                
+                const payload = {
+                    contents: [{ role: "user", parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                "recipeName": { "type": "STRING" },
+                                "ingredients": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "instructions": { "type": "ARRAY", "items": { "type": "STRING" } }
+                            },
+                            required: ["recipeName", "ingredients", "instructions"]
+                        }
                     }
+                };
+
+                try {
+                    const apiKey = ""; // Leave empty, handled by the environment
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`API request failed with status ${response.status}`);
+
+                    const result = await response.json();
+                    
+                    if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0]) {
+                        const recipeJson = result.candidates[0].content.parts[0].text;
+                        currentRecipe = JSON.parse(recipeJson);
+                        displayRecipe(currentRecipe);
+                    } else {
+                        throw new Error("Invalid response structure from AI.");
+                    }
+
+                } catch (error) {
+                    console.error("Error generating recipe:", error);
+                    showMessage('Failed to generate recipe. Please try again.', 'error');
+                } finally {
+                    loader.classList.add('hidden');
+                    generateBtn.disabled = false;
+                    generateBtn.textContent = 'Generate Recipe';
                 }
             };
 
-            try {
-                const apiKey = ""; // Leave empty
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+            // --- Display the generated recipe in the UI ---
+            const displayRecipe = (recipe) => {
+                recipeNameEl.textContent = recipe.recipeName;
+                recipeIngredientsEl.innerHTML = '';
+                recipeInstructionsEl.innerHTML = '';
+
+                recipe.ingredients.forEach(item => {
+                    const li = document.createElement('li');
+                    li.textContent = item;
+                    recipeIngredientsEl.appendChild(li);
                 });
 
-                if (!response.ok) throw new Error(`API request failed with status ${response.status}`);
+                recipe.instructions.forEach(step => {
+                    const li = document.createElement('li');
+                    li.textContent = step;
+                    recipeInstructionsEl.appendChild(li);
+                });
 
-                const result = await response.json();
+                recipeOutput.classList.remove('hidden');
+            };
+
+            // --- Combined Save and Download Function ---
+            const saveAndDownload = async () => {
+                if (!currentRecipe) {
+                    showMessage('No recipe to process. Please generate one first.', 'error');
+                    return;
+                }
+
+                saveAndDownloadBtn.disabled = true;
+                saveAndDownloadBtn.textContent = 'Processing...';
+                showMessage('Saving and downloading...', 'info');
+
+                // 1. Save to Google Sheet
+                try {
+                    const response = await fetch(APPS_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'cors',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify(currentRecipe)
+                    });
+                    const result = await response.json();
+                    if (result.status !== 'success') {
+                        throw new Error(result.message || 'Failed to save to sheet.');
+                    }
+                    showMessage('Saved to sheet! Now downloading PDF...', 'success');
+                } catch (error) {
+                    console.error('Error saving to Google Sheet:', error);
+                    showMessage('Could not save to sheet, but you can still download the PDF.', 'error');
+                }
+
+                // 2. Generate and Download PDF (runs regardless of save success)
+                generatePdf();
+
+                // Reset button state after a short delay
+                setTimeout(() => {
+                    saveAndDownloadBtn.disabled = false;
+                    saveAndDownloadBtn.textContent = 'Save to Sheet & Download PDF';
+                }, 1500);
+            };
+
+            // --- Generate and Download PDF ---
+            const generatePdf = () => {
+                const { recipeName, ingredients, instructions } = currentRecipe;
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
                 
-                if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0]) {
-                    const recipeJson = result.candidates[0].content.parts[0].text;
-                    currentRecipe = JSON.parse(recipeJson);
-                    displayRecipe(currentRecipe);
-                } else {
-                    throw new Error("Invalid response structure from AI.");
-                }
+                let yPos = 20;
+                const pageMargin = 14;
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const textWidth = pageWidth - (pageMargin * 2);
 
-            } catch (error) {
-                console.error("Error generating recipe:", error);
-                showMessage('Failed to generate recipe. Please try again.', 'error');
-            } finally {
-                loader.classList.add('hidden');
-                generateBtn.disabled = false;
-                generateBtn.textContent = 'Generate Recipe';
-            }
-        };
+                doc.setFontSize(22);
+                doc.text(recipeName, pageWidth / 2, yPos, { align: 'center' });
+                yPos += 20;
 
-        // --- Display the generated recipe in the UI ---
-        const displayRecipe = (recipe) => {
-            recipeNameEl.textContent = recipe.recipeName;
-            recipeIngredientsEl.innerHTML = '';
-            recipeInstructionsEl.innerHTML = '';
-
-            recipe.ingredients.forEach(item => {
-                const li = document.createElement('li');
-                li.textContent = item;
-                recipeIngredientsEl.appendChild(li);
-            });
-
-            recipe.instructions.forEach(step => {
-                const li = document.createElement('li');
-                li.textContent = step;
-                recipeInstructionsEl.appendChild(li);
-            });
-
-            recipeOutput.classList.remove('hidden');
-        };
-
-        // --- Combined Save and Download Function ---
-        const saveAndDownload = async () => {
-            if (!currentRecipe) {
-                showMessage('No recipe to process. Please generate one first.', 'error');
-                return;
-            }
-
-            saveAndDownloadBtn.disabled = true;
-            saveAndDownloadBtn.textContent = 'Processing...';
-            showMessage('Saving and downloading...', 'info');
-
-            // 1. Save to Google Sheet
-            try {
-                const response = await fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    mode: 'cors',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify(currentRecipe)
+                doc.setFontSize(16);
+                doc.text("Ingredients:", pageMargin, yPos);
+                yPos += 10;
+                doc.setFontSize(12);
+                ingredients.forEach(item => {
+                    const lines = doc.splitTextToSize(`• ${item}`, textWidth);
+                    if (yPos + (lines.length * 7) > 280) { doc.addPage(); yPos = 20; }
+                    doc.text(lines, pageMargin, yPos);
+                    yPos += (lines.length * 7);
                 });
-                const result = await response.json();
-                if (result.status !== 'success') {
-                    throw new Error(result.message || 'Failed to save to sheet.');
-                }
-                showMessage('Saved to sheet! Now downloading PDF...', 'success');
-            } catch (error) {
-                console.error('Error saving to Google Sheet:', error);
-                showMessage('Could not save to sheet, but you can still download the PDF.', 'error');
-            }
 
-            // 2. Generate and Download PDF (runs regardless of save success)
-            generatePdf();
+                yPos += 10;
+                if (yPos > 280) { doc.addPage(); yPos = 20; }
+                doc.setFontSize(16);
+                doc.text("Instructions:", pageMargin, yPos);
+                yPos += 10;
+                doc.setFontSize(12);
+                instructions.forEach((step, index) => {
+                    const lines = doc.splitTextToSize(`${index + 1}. ${step}`, textWidth);
+                    if (yPos + (lines.length * 7) > 280) { doc.addPage(); yPos = 20; }
+                    doc.text(lines, pageMargin, yPos);
+                    yPos += (lines.length * 7);
+                });
 
-            // Reset button state after a short delay
-            setTimeout(() => {
-                saveAndDownloadBtn.disabled = false;
-                saveAndDownloadBtn.textContent = 'Save to Sheet & Download PDF';
-            }, 1500);
-        };
+                const filename = `${recipeName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
+                doc.save(filename);
+            };
 
-        // --- Generate and Download PDF ---
-        const generatePdf = () => {
-            const { recipeName, ingredients, instructions } = currentRecipe;
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            
-            let yPos = 20;
-            const pageMargin = 14;
-            const pageWidth = doc.internal.pageSize.getWidth();
-            const textWidth = pageWidth - (pageMargin * 2);
+            // --- Utility to show messages to the user ---
+            const showMessage = (message, type) => {
+                messageBox.textContent = message;
+                messageBox.className = 'text-center text-sm p-3 rounded-lg'; // Reset classes
+                if (type === 'success') messageBox.classList.add('bg-green-900', 'text-green-300');
+                else if (type === 'error') messageBox.classList.add('bg-red-900', 'text-red-300');
+                else if (type === 'info') messageBox.classList.add('bg-blue-900', 'text-blue-300');
+                else messageBox.textContent = '';
+            };
 
-            doc.setFontSize(22);
-            doc.text(recipeName, pageWidth / 2, yPos, { align: 'center' });
-            yPos += 20;
-
-            doc.setFontSize(16);
-            doc.text("Ingredients:", pageMargin, yPos);
-            yPos += 10;
-            doc.setFontSize(12);
-            ingredients.forEach(item => {
-                const lines = doc.splitTextToSize(`• ${item}`, textWidth);
-                if (yPos + (lines.length * 7) > 280) { doc.addPage(); yPos = 20; }
-                doc.text(lines, pageMargin, yPos);
-                yPos += (lines.length * 7);
-            });
-
-            yPos += 10;
-            if (yPos > 280) { doc.addPage(); yPos = 20; }
-            doc.setFontSize(16);
-            doc.text("Instructions:", pageMargin, yPos);
-            yPos += 10;
-            doc.setFontSize(12);
-            instructions.forEach((step, index) => {
-                const lines = doc.splitTextToSize(`${index + 1}. ${step}`, textWidth);
-                 if (yPos + (lines.length * 7) > 280) { doc.addPage(); yPos = 20; }
-                doc.text(lines, pageMargin, yPos);
-                yPos += (lines.length * 7);
-            });
-
-            const filename = `${recipeName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
-            doc.save(filename);
-        };
-
-        // --- Utility to show messages to the user ---
-        const showMessage = (message, type) => {
-            messageBox.textContent = message;
-            messageBox.className = 'text-center text-sm p-3 rounded-lg'; // Reset classes
-            if (type === 'success') messageBox.classList.add('bg-green-900', 'text-green-300');
-            else if (type === 'error') messageBox.classList.add('bg-red-900', 'text-red-300');
-            else if (type === 'info') messageBox.classList.add('bg-blue-900', 'text-blue-300');
-            else messageBox.textContent = '';
-        };
-
-        // Event Listeners
-        generateBtn.addEventListener('click', generateRecipe);
-        saveAndDownloadBtn.addEventListener('click', saveAndDownload);
+            // Event Listeners
+            generateBtn.addEventListener('click', generateRecipe);
+            saveAndDownloadBtn.addEventListener('click', saveAndDownload);
+        });
     </script>
 </body>
 </html>
